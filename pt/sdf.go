@@ -94,6 +94,28 @@ func (s *SphereSDF) BoundingBox() Box {
 	return Box{Vector{-r, -r, -r}, Vector{r, r, r}}
 }
 
+// ConeSDF
+
+type ConeSDF struct {
+	Radius float64
+	Height float64
+}
+
+func NewConeSDF(radius, height float64) SDF {
+	return &ConeSDF{radius, height}
+}
+
+func (s *ConeSDF) Evaluate(p Vector) float64 {
+	q := math.Sqrt(p.X*p.X + p.Z*p.Z)
+	return s.Radius*q + s.Height*p.Y
+}
+
+func (s *ConeSDF) BoundingBox() Box {
+	r := s.Radius
+	h := s.Height / 2
+	return Box{Vector{-r, -h, -r}, Vector{r, h, r}}
+}
+
 // CubeSDF
 
 type CubeSDF struct {
