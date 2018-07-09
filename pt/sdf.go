@@ -97,21 +97,53 @@ func (s *SphereSDF) BoundingBox() Box {
 // ConeSDF
 
 type ConeSDF struct {
-	Radius float64
-	Height float64
+	BaseRadius float64
+	TopRadius  float64
+	Height     float64
 }
 
-func NewConeSDF(radius, height float64) SDF {
-	return &ConeSDF{radius, height}
+func NewConeSDF(baseRadius, topRadius, height float64) SDF {
+	return &ConeSDF{baseRadius, topRadius, height}
 }
 
 func (s *ConeSDF) Evaluate(p Vector) float64 {
-	q := math.Sqrt(p.X*p.X + p.Z*p.Z)
-	return s.Radius*q + s.Height*p.Y
+	q1 := math.Sqrt(p.X*p.X + p.Z*p.Z)
+	d1 := -p.Y - s.TopRadius
+	d2 := s.BaseRadius*q1 + s.Height*p.Y
+	if p.Y > d2 {
+		d2 = p.Y
+	}
+
+	l1 := 0.0
+	if d1 >= 0.0 && d2 >= 0.0 {
+		l1 = math.Sqrt(d1*d1 + d2*d2)
+	}
+
+	l2 := d1
+	if d2 > l2 {
+		l2 = d2
+	}
+	if 0.0 < l2 {
+		l2 = 0.0
+	}
+	return l1 + l2
+
+	/*
+		    vec2 q = vec2( length(p.xz), p.y );
+		    float d1 = -p.y-c.z;
+		    float d2 = max( dot(q,c.xy), p.y);
+		    return length(max(vec2(d1,d2),0.0)) + min(max(d1,d2), 0.);
+
+			q := math.Sqrt(p.X*p.X + p.Z*p.Z)
+			return s.Radius*q + s.Height*p.Y
+	*/
 }
 
 func (s *ConeSDF) BoundingBox() Box {
-	r := s.Radius
+	r := s.BaseRadius
+	if s.TopRadius > r {
+		r = s.TopRadius
+	}
 	h := s.Height / 2
 	return Box{Vector{-r, -h, -r}, Vector{r, h, r}}
 }
