@@ -94,49 +94,86 @@ func (s *SphereSDF) BoundingBox() Box {
 	return Box{Vector{-r, -r, -r}, Vector{r, r, r}}
 }
 
+// V2
+
+type V2 struct {
+	X, Y float64
+}
+
+func (v V2) Length() float64 {
+	return math.Sqrt(v.X*v.X + v.Y*v.Y)
+}
+
+func (v V2) Sub(d V2) V2 {
+	return V2{v.X - d.X, v.Y - d.Y}
+}
+
+func (v V2) Dot(d V2) float64 {
+	return v.X*d.X + v.Y*d.Y
+}
+
+func (v V2) Normalize() V2 {
+	length := math.Sqrt(v.X*v.X + v.Y*v.Y)
+	if length > 0 {
+		return V2{v.X / length, v.Y / length}
+	}
+	return v
+}
+
 // ConeSDF
 
 type ConeSDF struct {
 	BaseRadius float64
 	TopRadius  float64
 	Height     float64
+	Round      float64
 }
 
-func NewConeSDF(baseRadius, topRadius, height float64) SDF {
-	return &ConeSDF{baseRadius, topRadius, height}
+func NewConeSDF(baseRadius, topRadius, height, round float64) SDF {
+	return &ConeSDF{baseRadius, topRadius, height, round}
 }
 
 func (s *ConeSDF) Evaluate(p Vector) float64 {
-	q1 := math.Sqrt(p.X*p.X + p.Z*p.Z)
-	d1 := -p.Y - s.TopRadius
-	d2 := s.BaseRadius*q1 + s.Height*p.Y
-	if p.Y > d2 {
-		d2 = p.Y
-	}
+	// Cone algorithn from https://github.com/deadsy/sdfx
+	height := s.Height/2 - s.Round
+	// cone slope vector and normal
+	su := V2{s.TopRadius, height / 2}.Sub(V2{s.BaseRadius, -height / 2}).Normalize()
+	sn := V2{su.Y, -su.X}
+	// inset the radii for the rounding
+	ofs := s.Round / sn.X
+	sr0 := s.BaseRadius - (1+sn.Y)*ofs
+	sr1 := s.TopRadius - (1-sn.Y)*ofs
+	// cone slope length
+	sl := V2{sr1, height}.Sub(V2{sr0, -height}).Length()
 
-	l1 := 0.0
-	if d1 >= 0.0 && d2 >= 0.0 {
-		l1 = math.Sqrt(d1*d1 + d2*d2)
+	// convert to SoR 2d coordinates
+	p2 := V2{V2{p.X, p.Y}.Length(), p.Z}
+	// is p2 above the cone?
+	if p2.Y >= height && p2.X <= sr1 {
+		return p2.Y - height - s.Round
 	}
-
-	l2 := d1
-	if d2 > l2 {
-		l2 = d2
+	// is p2 below the cone?
+	if p2.Y <= -height && p2.X <= sr0 {
+		return -p2.Y - height - s.Round
 	}
-	if 0.0 < l2 {
-		l2 = 0.0
+	// distance to slope line
+	v := p2.Sub(V2{sr0, -height})
+	d_slope := v.Dot(sn)
+	// is p2 inside the cone?
+	if d_slope < 0 && math.Abs(p2.Y) < height {
+		return -math.Min(-d_slope, height-math.Abs(p2.Y)) - s.Round
 	}
-	return l1 + l2
-
-	/*
-		    vec2 q = vec2( length(p.xz), p.y );
-		    float d1 = -p.y-c.z;
-		    float d2 = max( dot(q,c.xy), p.y);
-		    return length(max(vec2(d1,d2),0.0)) + min(max(d1,d2), 0.);
-
-			q := math.Sqrt(p.X*p.X + p.Z*p.Z)
-			return s.Radius*q + s.Height*p.Y
-	*/
+	// is p2 closest to the slope line?
+	t := v.Dot(su)
+	if t >= 0 && t <= sl {
+		return d_slope - s.Round
+	}
+	// is p2 closest to the base radius vertex?
+	if t < 0 {
+		return v.Length() - s.Round
+	}
+	// p2 is closest to the top radius vertex
+	return p2.Sub(V2{sr1, height}).Length() - s.Round
 }
 
 func (s *ConeSDF) BoundingBox() Box {
